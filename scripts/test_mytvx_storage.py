@@ -102,6 +102,70 @@ public class StorageTest {
 }''',
 }
 
+SOURCES["com/fongmi/android/tv/api/loader/SpiderStorageCompatTest.java"] = r'''package com.fongmi.android.tv.api.loader;
+import java.io.File;
+import java.nio.file.Files;
+public class SpiderStorageCompatTest {
+ static int checks;
+ static File legacy;
+ static void check(boolean ok, String message) { checks++; if (!ok) throw new AssertionError(message); }
+ // Filesystem branch transcribed from supplied spring.jar makeExternalDir DEX.
+ static class Spring {
+  private static File externalDir;
+  private static File makeExternalDir(String name) {
+   File file = new File(externalDir != null ? externalDir : legacy, name);
+   file.mkdirs();
+   return file;
+  }
+  static void init() throws Exception {
+   for (String dir : new String[]{"TVBox", "VOX", "TV"})
+    Files.writeString(new File(makeExternalDir(dir), "cookie-fixture").toPath(), "fixture");
+  }
+ }
+ static class Unrelated {}
+ static class WrongType {
+  private static String externalDir;
+  private static File makeExternalDir(String name) { return null; }
+ }
+ static class InstanceField {
+  private File externalDir;
+  private static File makeExternalDir(String name) { return null; }
+ }
+ static class FinalField {
+  private static final File externalDir = new File("unchanged");
+  private static File makeExternalDir(String name) { return null; }
+ }
+ static class MissingMethod { private static File externalDir; }
+ public static void main(String[] args) throws Exception {
+  File fixture = new File(args[0]);
+  legacy = new File(fixture, "unpatched-root");
+  Spring.init();
+  for (String dir : new String[]{"TVBox", "VOX", "TV"})
+   check(new File(legacy, dir + "/cookie-fixture").isFile(), "reproduce original root write");
+  File original = legacy;
+  legacy = new File(fixture, "patched-root");
+  File root = new File(legacy, "Download/mytvx"); root.mkdirs();
+  check(SpiderStorageCompat.configure(Spring.class, root), "override must be installed");
+  Spring.init();
+  for (String dir : new String[]{"TVBox", "VOX", "TV"}) {
+   check(new File(root, dir + "/cookie-fixture").isFile(), "redirected cookie write");
+   check(!new File(legacy, dir).exists(), "no shared-root directory");
+   check(Files.readString(new File(original, dir + "/cookie-fixture").toPath()).equals("fixture"), "old data preserved");
+  }
+  check(SpiderStorageCompat.configure(Spring.class, root), "idempotent override");
+  check(!SpiderStorageCompat.configure(Unrelated.class, root), "unrelated jar unchanged");
+  check(!SpiderStorageCompat.configure(WrongType.class, root), "wrong field type unchanged");
+  check(!SpiderStorageCompat.configure(InstanceField.class, root), "instance field unchanged");
+  check(!SpiderStorageCompat.configure(FinalField.class, root), "final field unchanged");
+  check(!SpiderStorageCompat.configure(MissingMethod.class, root), "missing method unchanged");
+  System.out.println("PASS: " + checks + " spider compatibility assertions; unpatched root-write reproduced, configured fixture redirected");
+ }
+}'''
+
+loader_source = (REPO / "app/src/main/java/com/fongmi/android/tv/api/loader/JarLoader.java").read_text()
+init_source = loader_source[loader_source.index("private void invokeInit("):]
+assert init_source.index("SpiderStorageCompat.configure(clz, Path.root())") < init_source.index("method.invoke(clz, App.get())"), "storage override must precede plugin initialization"
+
 with tempfile.TemporaryDirectory(prefix="mytvx-storage-", dir=os.environ.get("TMPDIR")) as tmp:
     tmp = Path(tmp)
     java = []
@@ -112,5 +176,7 @@ with tempfile.TemporaryDirectory(prefix="mytvx-storage-", dir=os.environ.get("TM
         java.append(str(file))
     for name in ("Path.java", "StorageRoot.java"):
         java.append(str(REPO / "catvod/src/main/java/com/github/catvod/utils" / name))
+    java.append(str(REPO / "app/src/main/java/com/fongmi/android/tv/api/loader/SpiderStorageCompat.java"))
     subprocess.run(["javac", "-d", str(tmp / "classes"), *java], check=True)
     subprocess.run(["java", "-cp", str(tmp / "classes"), "com.github.catvod.utils.StorageTest", str(tmp / "fixture")], check=True)
+    subprocess.run(["java", "-cp", str(tmp / "classes"), "com.fongmi.android.tv.api.loader.SpiderStorageCompatTest", str(tmp / "spider-fixture")], check=True)

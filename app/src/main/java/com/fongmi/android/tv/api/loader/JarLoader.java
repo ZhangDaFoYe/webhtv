@@ -126,6 +126,9 @@ public class JarLoader {
         try {
             SpiderDebug.log("jar-loader", "jar init start key=%s", key);
             Class<?> clz = loader.loadClass("com.github.catvod.spider.Init");
+            if (SpiderStorageCompat.configure(clz, Path.root())) {
+                SpiderDebug.log("jar-loader", "spider storage override installed key=%s", key);
+            }
             Method method = clz.getMethod("init", Context.class);
             method.invoke(clz, App.get());
             SpiderDebug.log("jar-loader", "jar init done key=%s cost=%sms", key, System.currentTimeMillis() - start);

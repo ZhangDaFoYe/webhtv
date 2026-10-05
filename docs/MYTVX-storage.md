@@ -58,6 +58,41 @@ A Java helper is not an OS sandbox. They must be audited individually or avoided
 No attached Android device: scoped-storage behavior, UI restoration, playback and
 real plugin writes remain device-unverified even after APK compilation.
 
+## Playback-created root directories: supplied spider follow-up
+
+The user reproduced TVBox/VOX/TV creation on playback after the first APK.
+Source-only and 88 bundled archive/native-file scans did not identify the creator.
+The supplied configuration resolves to a remote `spring.jar` (site `csp_XiaoYa`).
+Downloaded JAR SHA256:
+`5ac48170119847b73d3941d1318aa79fe4966967b8d2a0023be3c387ab0ed45f`.
+No configuration contents, credentials or downloaded JAR are committed.
+
+DEX disassembly establishes the direct write path:
+- `Init$XsCookieTarget.write` -> `Init.X("TVBox")`
+- `Init$VoxCookieTarget.write` -> `Init.X("VOX")`
+- `Init$OkCookieTarget.write` -> `Init.X("TV")`
+- `Init.X` -> `makeExternalDir(String)`: if private static File `externalDir`
+  is non-null, create a child there; otherwise call Android
+  `Environment.getExternalStorageDirectory()` and `File.mkdirs()` directly.
+- `Init.init(Context)` does not overwrite externalDir and can start background
+  synchronization. Its static initializer only creates credential/target arrays.
+
+Thus host Path redirection cannot intercept these writes. Narrow fix:
+`JarLoader.invokeInit` applies `SpiderStorageCompat.configure` before calling
+plugin init. The helper recognizes the exact field/method shape, validates mutable
+static File and static File-returning makeExternalDir(String), sets Path.root(),
+and reads it back. Unrelated or incompatible spider classes remain unchanged.
+This uses the plugin's existing override rather than patching its binary, blocking
+cookie synchronization, or changing the user's server. Future incompatible jars
+still need separate inspection; this is not a universal filesystem sandbox.
+
+Regression evidence: original fallback filesystem branch transcribed from DEX
+reproduces all three root directories; a no-op override fails the new test.
+After the fix, 19 spider-compatibility assertions and the original 60 assertions
+pass; tests preserve old fixture data, check non-matching field shapes, and assert
+that integration occurs before init. This is a JVM fixture, not execution of the
+full Android DEX on a device. CI build and user's playback re-test remain required.
+
 ## Recovery anchor
 Implemented on main in /root/projects/webhtv-mytvx; initial tree was clean.
 `python3 scripts/test_mytvx_storage.py`: PASS, 60 assertions executing production
