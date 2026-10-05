@@ -1,0 +1,78 @@
+name: mytvx APK build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mytvx-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'ZhangDaFoYe/webhtv'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [Mobile, Leanback]
+        abi: [Arm64_v8a, Armeabi_v7a]
+    env:
+      WEBHTV_RELEASE_TAG: mytvx-${{ github.run_number }}
+      WEBHTV_APK_SUFFIX: -mytvx
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Test fork storage policy
+        run: python3 scripts/test_mytvx_storage.py
+      - name: Verify bundled MPV native assets
+        run: bash scripts/verify_mpv_native_assets.sh --require-elf
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android packages
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
+      - name: Configure stable fork signing
+        env:
+          KEYSTORE: ${{ secrets.MYTVX_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MYTVX_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MYTVX_KEY_ALIAS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS"
+          umask 077
+          printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/mytvx.jks"
+          printf 'storeFile=%s\nkeyAlias=%s\nstorePassword=%s\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/mytvx.jks" "$KEY_ALIAS" "$STORE_PASSWORD" "$STORE_PASSWORD" > local.properties
+      - name: Build signed release APK
+        run: bash ./gradlew :app:assemble${{ matrix.mode }}${{ matrix.abi }}Release --no-daemon
+      - name: Verify signature and collect provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp Release/apk/*-mytvx.apk dist/
+          for apk in dist/*.apk; do
+            "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$apk" > "$apk.signature.txt"
+          done
+          sha256sum dist/*.apk > dist/SHA256SUMS
+          printf 'repository=%s\ncommit=%s\nrun=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > dist/BUILD.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mytvx-${{ matrix.mode }}-${{ matrix.abi }}-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove runner signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/mytvx.jks" local.properties

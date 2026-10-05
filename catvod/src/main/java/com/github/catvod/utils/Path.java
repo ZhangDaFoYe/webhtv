@@ -21,6 +21,7 @@ public class Path {
     private static final String TAG = Path.class.getSimpleName();
 
     private static File mkdir(File file) {
+        file = writable(file);
         if (file == null || file.exists()) return file;
         if (file.mkdirs()) Logger.t(TAG).d("Created dir:" + file);
         return file;
@@ -35,7 +36,18 @@ public class Path {
     }
 
     public static File root() {
-        return Environment.getExternalStorageDirectory();
+        File external;
+        try {
+            external = Init.context().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+        } catch (SecurityException e) {
+            external = null;
+        }
+        return StorageRoot.choose(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                external, files());
+    }
+
+    private static File writable(File file) {
+        return StorageRoot.redirect(file, Environment.getExternalStorageDirectory(), root());
     }
 
     public static File cache() {
@@ -91,11 +103,13 @@ public class Path {
     }
 
     public static File root(String name) {
-        return new File(root(), name);
+        return StorageRoot.child(root(), name);
     }
 
     public static File root(String child, String name) {
-        return new File(mkdir(new File(root(), child)), name);
+        File file = root(child + File.separator + name);
+        mkdir(file.getParentFile());
+        return file;
     }
 
     public static File cache(String name) {
@@ -128,8 +142,13 @@ public class Path {
 
     public static File local(String path) {
         path = path.replace("file:/", "");
-        File file = new File(root(), path);
-        return file.exists() ? file : new File(path);
+        File absolute = new File(path);
+        File redirected = writable(absolute);
+        if (!redirected.equals(absolute) && redirected.exists()) return redirected;
+        File file = root(path);
+        if (file.exists()) return file;
+        File legacy = new File(Environment.getExternalStorageDirectory(), path);
+        return legacy.exists() ? legacy : absolute;
     }
 
     public static String read(File file) {
@@ -166,6 +185,7 @@ public class Path {
     }
 
     public static File write(File file, InputStream is) {
+        file = writable(file);
         try (InputStream input = is; FileOutputStream output = new FileOutputStream(create(file))) {
             int read;
             byte[] buffer = new byte[16384];
@@ -177,6 +197,7 @@ public class Path {
     }
 
     public static File write(File file, byte[] data) {
+        file = writable(file);
         try (FileOutputStream fos = new FileOutputStream(create(file))) {
             fos.write(data);
             fos.flush();
@@ -187,6 +208,7 @@ public class Path {
     }
 
     public static void move(File in, File out) {
+        out = writable(out);
         if (in.renameTo(out)) return;
         copy(in, out);
         clear(in);
@@ -229,6 +251,7 @@ public class Path {
     }
 
     public static File create(File file) {
+        file = writable(file);
         try {
             File parent = file.getParentFile();
             if (parent != null) mkdir(parent);

@@ -52,6 +52,9 @@ import java.util.concurrent.TimeoutException;
 
 public class Updater implements UpdateTransfer.Callback, UpdateListener {
 
+    // Fork builds use an independent signing key; upstream APKs cannot update them.
+    private static final boolean MYTVX_MANUAL_UPDATES = true;
+
     private static final String DEFAULT_RELEASE_NOTES = "手动触发 GitHub Actions 构建发布。";
     private static final long UPDATE_CHECK_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(10);
     private static final long GITHUB_REQUEST_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(4);
@@ -105,6 +108,11 @@ public class Updater implements UpdateTransfer.Callback, UpdateListener {
     }
 
     public void start(FragmentActivity activity) {
+        if (MYTVX_MANUAL_UPDATES) {
+            if (force) Notify.show("mytvx: install updates from ZhangDaFoYe/webhtv Actions; upstream updates are disabled.");
+            force = false;
+            return;
+        }
         bind(activity);
         boolean forceCheck = force;
         force = false;
