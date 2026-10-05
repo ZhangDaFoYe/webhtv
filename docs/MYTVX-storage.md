@@ -70,9 +70,15 @@ First CI https://github.com/ZhangDaFoYe/webhtv/actions/runs/37277654911 passed
 storage tests, native asset verification and signing setup, then failed because
 Chaquopy requires Python 3.10. Follow-up c3bf1caeb0d5e866322bff1e743a0244c668e6fc
 installs Python 3.10; retry https://github.com/ZhangDaFoYe/webhtv/actions/runs/37277985186
-is in progress. Sync verification run
+completed successfully for all four release variants (Mobile/Leanback x
+arm64-v8a/armeabi-v7a), including apksigner verification and artifact upload.
+GitHub artifacts API returned exactly four non-expired artifacts, IDs:
+11331665883, 11331197607, 11331182671, 11330369380.
+An attempted local `gh run download` timed out before extracting files; artifacts
+remain available through the successful run page. Sync verification run
 https://github.com/ZhangDaFoYe/webhtv/actions/runs/37277776138 succeeded (no new
 upstream commit, so no automatic build dispatch was needed).
-Next: verify the retry CI result and download artifacts on success.
+Next: parent independent review and device testing; local APK download may be
+retried separately if needed.
 Parent independently reviews before closure; actual Android permissions and
 plugin runtime behavior are still unverified.
