@@ -1,0 +1,29 @@
+name: Sync upstream
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 * * * *'
+permissions:
+  contents: write
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: github.repository == 'ZhangDaFoYe/webhtv'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Merge upstream main without overwriting customizations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA=$(gh api repos/webhtv/webhtv/commits/main --jq .sha)
+          echo "Upstream commit: $SHA"
+          gh api --method POST "repos/$REPO/merges" \
+            -f base=main -f head="$SHA" \
+            -f commit_message="chore: merge webhtv upstream main"
+          echo "Upstream synchronization completed. Conflicts fail safely; no force push."
